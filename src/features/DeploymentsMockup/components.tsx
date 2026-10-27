@@ -162,15 +162,15 @@ export function PlanLabel({ kind }: { kind: PlanKind }) {
 }
 
 export function ExpressionChips({ expression }: { expression: Expression }) {
-  const entries = Object.entries(expression).filter(([, v]) => v.length)
+  const entries = expression.filter((condition) => condition.values.length)
   if (!entries.length) return <span className="text-muted-foreground">all devices</span>
   return (
     <span className="inline-flex flex-wrap gap-1">
-      {entries.map(([k, v], i) => (
-        <span key={k} className="inline-flex items-center gap-1">
-          {i > 0 && <span className="text-[10px] text-muted-foreground">AND</span>}
+      {entries.map(({ key, values, operator }, i) => (
+        <span key={`${key}-${i}`} className="inline-flex items-center gap-1">
+          {i > 0 && <span className="text-[10px] text-muted-foreground">{operator}</span>}
           <code className="rounded bg-gray-100 px-1.5 py-0.5 text-xs">
-            {k} = {v.join(" | ")}
+            {key} = {values.join(" | ")}
           </code>
         </span>
       ))}

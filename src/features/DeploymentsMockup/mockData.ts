@@ -6,7 +6,12 @@ export type DesiredState = "RUNNING" | "ABSENT"
 export type Source = "RULE" | "MANUAL"
 export type ExecutionState = "PENDING" | "APPLYING" | "APPLIED" | "SUCCESS" | "FAILED" | "SUPERSEDED"
 export type Scope = "device" | "endpoint" | "service"
-export type Expression = Record<string, string[]>
+export interface ExpressionCondition {
+  key: string
+  values: string[]
+  operator: "AND" | "OR"
+}
+export type Expression = ExpressionCondition[]
 
 export interface MockModule {
   name: string
@@ -29,6 +34,19 @@ export interface MockDefinition {
   modules: MockModule[]
 }
 
+export interface MockComposeService {
+  name: string
+  image: string
+  version: string
+  env: Record<string, string>
+  ports: string[]
+  volumes: string[]
+  restart: string
+  command: string
+  networks: string[]
+  depends_on: string[]
+}
+
 export interface MockVersion {
   version: number
   change_note: string
@@ -36,6 +54,9 @@ export interface MockVersion {
   created_by_name: string
   created_at: string
   definition?: MockDefinition // IOTEDGE
+  manifest_override?: unknown // IOTEDGE
+  compose_services?: MockComposeService[] // COMPOSE form values
+  compose_yaml_override?: boolean // COMPOSE editor text takes precedence over form values
   compose_yaml?: string // COMPOSE
 }
 
@@ -53,6 +74,7 @@ export interface MockRule {
   deployment_id: string
   version: number
   expression: Expression
+  excluded_device_ids?: string[]
   enabled: boolean
   updated_at: string
 }
@@ -160,7 +182,19 @@ const initialDeployments: MockDeployment[] = [
         content_hash: "sha256:77d0…",
         created_by_name: "Mihai",
         created_at: t("05T10:02"),
-        compose_yaml: 'services:\n  web:\n    image: nginx:1.27\n    ports:\n      - "8080:80"\n    restart: always\n',
+        compose_services: [{
+          name: "web",
+          image: "nginx",
+          version: "1.27",
+          env: {},
+          ports: ["8080:80"],
+          volumes: [],
+          restart: "always",
+          command: "",
+          networks: [],
+          depends_on: [],
+        }],
+        compose_yaml: 'services:\n  web:\n    image: "nginx:1.27"\n    restart: "always"\n    ports:\n      - "8080:80"\n',
       },
     ],
   },
@@ -176,8 +210,8 @@ const initialDevices: MockDevice[] = [
 ]
 
 const initialRules: MockRule[] = [
-  { id: "rule-1", deployment_id: "dep-1", version: 3, expression: { "device.city": ["Berlin"] }, enabled: true, updated_at: t("20T14:05") },
-  { id: "rule-2", deployment_id: "dep-2", version: 1, expression: { "endpoint.type": ["camera"], "device.city": ["Munich"] }, enabled: true, updated_at: t("02T16:30") },
+  { id: "rule-1", deployment_id: "dep-1", version: 3, expression: [{ key: "device.city", values: ["Berlin"], operator: "AND" }], excluded_device_ids: [], enabled: true, updated_at: t("20T14:05") },
+  { id: "rule-2", deployment_id: "dep-2", version: 1, expression: [{ key: "endpoint.type", values: ["camera"], operator: "AND" }, { key: "device.city", values: ["Munich"], operator: "AND" }], excluded_device_ids: [], enabled: true, updated_at: t("02T16:30") },
 ]
 
 const initialDeviceDeployments: MockDeviceDeployment[] = [
@@ -211,18 +245,27 @@ const initialModuleStates: Record<string, MockModuleState[]> = {
 // ---------- rule evaluation (mock of the server-side reconcile) ----------
 
 export function matches(device: MockDevice, expression: Expression) {
-  const groups: Record<Scope, [string, string[]][]> = { device: [], endpoint: [], service: [] }
-  for (const [key, values] of Object.entries(expression)) {
-    if (!values.length) continue
+  const conditions = expression.filter((condition) => condition.values.length)
+  if (!conditions.length) return true
+
+  const conditionMatches = ({ key, values }: ExpressionCondition) => {
     const [scope, field] = key.includes(".") ? (key.split(".") as [Scope, string]) : (["device", key] as [Scope, string])
-    groups[scope]?.push([field, values])
+    if (scope === "device") return values.includes(device.meta[field] ?? "")
+    if (scope === "endpoint") return device.endpoints.some((endpoint) => values.includes(endpoint[field as "type" | "vendor"] ?? ""))
+    return false
   }
-  const deviceOk = groups.device.every(([f, v]) => v.includes(device.meta[f] ?? ""))
-  const endpointOk =
-    groups.endpoint.length === 0 ||
-    device.endpoints.some((e) => groups.endpoint.every(([f, v]) => v.includes((e as unknown as Record<string, string>)[f] ?? "")))
-  // The mock has no services; any service.* condition matches nothing.
-  return deviceOk && endpointOk && groups.service.length === 0
+
+  let andGroupMatches = true
+  for (const [index, condition] of conditions.entries()) {
+    const currentMatches = conditionMatches(condition)
+    if (index > 0 && condition.operator === "OR") {
+      if (andGroupMatches) return true
+      andGroupMatches = currentMatches
+    } else {
+      andGroupMatches = andGroupMatches && currentMatches
+    }
+  }
+  return andGroupMatches
 }
 
 export type PlanKind = "ASSIGN" | "UPDATE" | "UNCHANGED" | "TAKEN_FROM" | "SKIPPED_MANUAL" | "REMOVE" | "LOST_TO_NEWER"
@@ -245,7 +288,7 @@ export function plan(world: WorldState): PlanRow[] {
   for (const device of world.devices) {
     const before = world.deviceDeployments.find((d) => d.device_id === device.device_id) ?? null
     const winner = world.rules
-      .filter((r) => r.enabled && matches(device, r.expression))
+      .filter((r) => r.enabled && !r.excluded_device_ids?.includes(device.device_id) && matches(device, r.expression))
       .sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0]
     if (before?.source === "MANUAL") {
       if (winner) rows.push({ device_id: device.device_id, kind: "SKIPPED_MANUAL", before, after: null })
@@ -284,7 +327,7 @@ interface MockStore extends WorldState {
   moduleStates: Record<string, MockModuleState[]>
   events: Toast[]
   addDeployment: (d: Pick<MockDeployment, "name" | "type" | "description">) => string
-  addVersion: (deploymentId: string, v: Pick<MockVersion, "change_note" | "definition" | "compose_yaml">) => number
+  addVersion: (deploymentId: string, v: Pick<MockVersion, "change_note" | "definition" | "manifest_override" | "compose_services" | "compose_yaml_override" | "compose_yaml">) => number
   saveRule: (rule: Omit<MockRule, "id" | "updated_at"> & { id?: string }) => void
   setRuleEnabled: (ruleId: string, enabled: boolean) => void
   deleteRule: (ruleId: string) => void
@@ -292,6 +335,7 @@ interface MockStore extends WorldState {
   assignManual: (deviceId: string, deploymentId: string, version: number, state: DesiredState) => void
   releaseToRules: (deviceId: string) => void
   redeliver: (deviceIds: string[]) => void
+  deployRules: (deploymentId: string) => void
   tick: () => void
   dismiss: (id: number) => void
 }
@@ -321,8 +365,12 @@ function queueExecution(s: MockStore, dd: MockDeviceDeployment, trigger: string)
   ]
 }
 
-function reconcile(s: MockStore, trigger: string): Partial<MockStore> {
-  const rows = plan(s).filter((r) => !["UNCHANGED", "SKIPPED_MANUAL"].includes(r.kind))
+function reconcile(s: MockStore, trigger: string, deploymentId: string): Partial<MockStore> {
+  const rows = plan(s).filter(
+    (r) =>
+      !["UNCHANGED", "SKIPPED_MANUAL"].includes(r.kind) &&
+      (r.after?.deployment_id === deploymentId || r.before?.deployment_id === deploymentId),
+  )
   let deviceDeployments = [...s.deviceDeployments]
   let executions = s.executions
   for (const row of rows) {
@@ -375,22 +423,22 @@ export const useMockStore = create<MockStore>((set, get) => ({
       const id = rule.id ?? nextId("rule")
       const saved: MockRule = { ...rule, id, updated_at: now() }
       const rules = rule.id ? s.rules.map((r) => (r.id === id ? saved : r)) : [...s.rules, saved]
-      return { rules, ...reconcile({ ...s, rules }, `${id} ${rule.id ? "edited" : "created"}`) }
+      return { rules }
     }),
   setRuleEnabled: (ruleId, enabled) =>
     set((s) => {
       const rules = s.rules.map((r) => (r.id === ruleId ? { ...r, enabled, updated_at: now() } : r))
-      return { rules, ...reconcile({ ...s, rules }, `${ruleId} ${enabled ? "enabled" : "disabled"}`) }
+      return { rules }
     }),
   deleteRule: (ruleId) =>
     set((s) => {
       const rules = s.rules.filter((r) => r.id !== ruleId)
-      return { rules, ...reconcile({ ...s, rules }, `${ruleId} deleted`) }
+      return { rules }
     }),
   setDeviceMeta: (deviceId, key, value) =>
     set((s) => {
       const devices = s.devices.map((d) => (d.device_id === deviceId ? { ...d, meta: { ...d.meta, [key]: value } } : d))
-      return { devices, ...reconcile({ ...s, devices }, `device ${deviceId}: ${key} changed to ${value}`) }
+      return { devices }
     }),
   assignManual: (deviceId, deploymentId, version, state) =>
     set((s) => {
@@ -406,8 +454,10 @@ export const useMockStore = create<MockStore>((set, get) => ({
   releaseToRules: (deviceId) =>
     set((s) => {
       const deviceDeployments = s.deviceDeployments.map((d) => (d.device_id === deviceId ? { ...d, source: "RULE" as const } : d))
-      return { deviceDeployments, ...reconcile({ ...s, deviceDeployments }, `${deviceId} released to rules`) }
+      return { deviceDeployments }
     }),
+  deployRules: (deploymentId) =>
+    set((s) => reconcile(s, `deploy ${s.deployments.find((d) => d.id === deploymentId)?.name ?? deploymentId}`, deploymentId)),
   redeliver: (deviceIds) =>
     set((s) => {
       let executions = s.executions
@@ -496,6 +546,11 @@ export function buildManifest(def: MockDefinition, clear = false) {
   }
   for (const m of modules) if (Object.keys(m.desired_properties).length) content[m.name] = { "properties.desired": m.desired_properties }
   return { modulesContent: content }
+}
+
+export function manifestForVersion(version: MockVersion, clear = false) {
+  if (!clear && version.manifest_override !== undefined) return version.manifest_override
+  return version.definition ? buildManifest(version.definition, clear) : undefined
 }
 
 export const emptyRuntime = runtime

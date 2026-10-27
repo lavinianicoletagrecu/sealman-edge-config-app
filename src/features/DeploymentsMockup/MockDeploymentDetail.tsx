@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
-import { FileJson, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react"
+import { Eye, Pencil, Plus, Rocket, RotateCcw, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -8,22 +8,21 @@ import {
   DeviceLink,
   ExecutionBadge,
   ExpressionChips,
-  JsonDialog,
   MockPage,
   Section,
-  SourceBadge,
-  SyncBadge,
   TypeBadge,
 } from "./components"
-import { buildManifest, deviceStatus, fmt, matches, useMockStore, type MockVersion } from "./mockData"
+import { deviceStatus, fmt, matches, plan, useMockStore } from "./mockData"
+import { MockRuleDevicesTable } from "./MockRuleDevicesTable"
 
 export default function MockDeploymentDetail() {
   const { deploymentId } = useParams()
   const navigate = useNavigate()
   const store = useMockStore()
-  const [json, setJson] = useState<{ title: string; description: string; value: unknown } | null>(null)
 
   const deployment = store.deployments.find((d) => d.id === deploymentId)
+  const [devicesExpanded, setDevicesExpanded] = useState(false)
+  const deploymentPlan = useMemo(() => plan(store), [store.devices, store.rules, store.deviceDeployments])
   if (!deployment) return <MockPage title="Not found">Unknown deployment.</MockPage>
 
   const rules = store.rules.filter((r) => r.deployment_id === deployment.id)
@@ -31,21 +30,13 @@ export default function MockDeploymentDetail() {
   const executions = store.executions.filter((e) => e.deployment_id === deployment.id).slice(0, 12)
   const failed = onDevices.filter((d) => deviceStatus(store, d.device_id) === "FAILED").map((d) => d.device_id)
   const isEdge = deployment.type === "IOTEDGE"
-
-  const show = (v: MockVersion, what: "definition" | "manifest") =>
-    setJson(
-      what === "definition"
-        ? {
-            title: `${deployment.name} v${v.version}: ${isEdge ? "modules" : "docker-compose.yaml"}`,
-            description: "Stored on the version. Never changes.",
-            value: isEdge ? v.definition : v.compose_yaml,
-          }
-        : {
-            title: `${deployment.name} v${v.version}: IoT Edge manifest`,
-            description: "Built by the manifest builder from the modules (password masked).",
-            value: v.definition && buildManifest(v.definition),
-          },
-    )
+  const deploymentDeviceIds = new Set([
+    ...onDevices.filter((d) => d.desired_state === "RUNNING").map((d) => d.device_id),
+    ...deploymentPlan
+      .filter((row) => row.after?.deployment_id === deployment.id && row.after.desired_state === "RUNNING")
+      .map((row) => row.device_id),
+  ])
+  const deploymentDevices = store.devices.filter((device) => deploymentDeviceIds.has(device.device_id))
 
   return (
     <MockPage
@@ -72,7 +63,7 @@ export default function MockDeploymentDetail() {
             <TableRow>
               <TableHead>Version</TableHead>
               <TableHead>Change note</TableHead>
-              <TableHead>{isEdge ? "Modules" : "Content"}</TableHead>
+              <TableHead>{isEdge ? "Modules" : "Services"}</TableHead>
               <TableHead>Author</TableHead>
               <TableHead>Created</TableHead>
               <TableHead className="text-right">Show</TableHead>
@@ -83,19 +74,22 @@ export default function MockDeploymentDetail() {
               <TableRow key={v.version}>
                 <TableCell className="font-medium">v{v.version}</TableCell>
                 <TableCell>{v.change_note}</TableCell>
-                <TableCell className="text-xs">{isEdge ? v.definition?.modules.map((m) => m.name).join(", ") || "–" : "docker-compose.yaml"}</TableCell>
+                <TableCell className="text-xs">
+                  {isEdge
+                    ? v.definition?.modules.map((m) => m.name).join(", ") || "–"
+                    : v.compose_services?.map((service) => service.name).join(", ") || "docker-compose.yaml"}
+                </TableCell>
                 <TableCell>{v.created_by_name}</TableCell>
                 <TableCell>{fmt(v.created_at)}</TableCell>
                 <TableCell className="text-right space-x-1">
-                  <Button size="sm" variant="ghost" onClick={() => show(v, "definition")}>
-                    {isEdge ? "Modules" : "YAML"}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => navigate(`/mockups/deployments/${deployment.id}/versions/${v.version}`)}
+                  >
+                    <Eye className="h-4 w-4 mr-1" />
+                    Show
                   </Button>
-                  {isEdge && (
-                    <Button size="sm" variant="ghost" onClick={() => show(v, "manifest")}>
-                      <FileJson className="h-4 w-4 mr-1" />
-                      Manifest
-                    </Button>
-                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -133,7 +127,9 @@ export default function MockDeploymentDetail() {
                   <ExpressionChips expression={r.expression} />
                 </TableCell>
                 <TableCell>v{r.version}</TableCell>
-                <TableCell>{store.devices.filter((d) => matches(d, r.expression)).length}</TableCell>
+                <TableCell>
+                  {store.devices.filter((device) => matches(device, r.expression) && !r.excluded_device_ids?.includes(device.device_id)).length}
+                </TableCell>
                 <TableCell>
                   <Switch checked={r.enabled} onCheckedChange={(v) => store.setRuleEnabled(r.id, v)} />
                 </TableCell>
@@ -160,54 +156,40 @@ export default function MockDeploymentDetail() {
       </Section>
 
       <Section
-        title="Devices"
-        description={
-          isEdge
-            ? "device_deployments: what each device should run, where it comes from, and whether the device confirmed it."
-            : "Assigned devices. Delivery of Compose deployments to devices is not part of this phase."
-        }
+        title="Deployments"
+        description="Rules define the target devices; deploying is a separate, explicit action. The device list is read-only here."
         actions={
-          isEdge && (
-            <Button size="sm" variant="outline" disabled={!failed.length} onClick={() => store.redeliver(failed)}>
-              <RotateCcw className="h-4 w-4 mr-1" />
-              Redeliver failed ({failed.length})
+          <>
+            {isEdge && (
+              <Button size="sm" variant="outline" disabled={!failed.length} onClick={() => store.redeliver(failed)}>
+                <RotateCcw className="mr-1 h-4 w-4" />
+                Redeliver failed ({failed.length})
+              </Button>
+            )}
+            <Button size="sm" variant="secondary" disabled={!rules.some((rule) => rule.enabled)} onClick={() => store.deployRules(deployment.id)}>
+              <Rocket className="mr-1 h-4 w-4" />
+              Deploy
             </Button>
-          )
+          </>
         }
       >
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Device</TableHead>
-              <TableHead>Version</TableHead>
-              <TableHead>Desired</TableHead>
-              <TableHead>Source</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {onDevices.map((d) => (
-              <TableRow key={d.device_id}>
-                <TableCell>
-                  <DeviceLink id={d.device_id} />
-                </TableCell>
-                <TableCell>v{d.version}</TableCell>
-                <TableCell className="text-xs">{d.desired_state}</TableCell>
-                <TableCell>
-                  <SourceBadge source={d.source} ruleId={d.rule_id} />
-                </TableCell>
-                <TableCell>{isEdge ? <SyncBadge status={deviceStatus(store, d.device_id)} /> : <span className="text-xs text-muted-foreground">delivery later</span>}</TableCell>
-              </TableRow>
-            ))}
-            {onDevices.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={5} className="text-muted-foreground">
-                  No device has this deployment.
-                </TableCell>
-              </TableRow>
+        <details open={devicesExpanded} onToggle={(event) => setDevicesExpanded(event.currentTarget.open)}>
+          <summary className="cursor-pointer text-sm font-medium">
+            Devices to watch ({deploymentDevices.length})
+          </summary>
+          <div className="mt-3">
+            {deploymentDevices.length ? (
+              <MockRuleDevicesTable
+                devices={deploymentDevices}
+                deviceDeployments={store.deviceDeployments}
+                deployments={store.deployments}
+                executions={store.executions}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">No devices are currently targeted or running this deployment.</p>
             )}
-          </TableBody>
-        </Table>
+          </div>
+        </details>
       </Section>
 
       {isEdge && (
@@ -243,7 +225,6 @@ export default function MockDeploymentDetail() {
         </Section>
       )}
 
-      {json && <JsonDialog open onOpenChange={() => setJson(null)} title={json.title} description={json.description} value={json.value} />}
     </MockPage>
   )
 }

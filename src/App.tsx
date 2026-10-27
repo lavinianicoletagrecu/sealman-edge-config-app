@@ -30,6 +30,7 @@ import UserProfile from "./pages/UserProfile";
 import MockDeploymentsList from "./features/DeploymentsMockup/MockDeploymentsList";
 import MockDeploymentDetail from "./features/DeploymentsMockup/MockDeploymentDetail";
 import MockVersionEditor from "./features/DeploymentsMockup/MockVersionEditor";
+import MockVersionPreview from "./features/DeploymentsMockup/MockVersionPreview";
 import MockRuleEditor from "./features/DeploymentsMockup/MockRuleEditor";
 import MockDevicesList from "./features/DeploymentsMockup/MockDevicesList";
 import { MockLayout } from "./features/DeploymentsMockup/components";
@@ -78,6 +79,7 @@ export default function App() {
               <Route path="deployments" element={<MockDeploymentsList />} />
               <Route path="deployments/:deploymentId" element={<MockDeploymentDetail />} />
               <Route path="deployments/:deploymentId/versions/new" element={<MockVersionEditor />} />
+              <Route path="deployments/:deploymentId/versions/:version" element={<MockVersionPreview />} />
               <Route path="deployments/:deploymentId/rules/new" element={<MockRuleEditor />} />
               <Route path="deployments/:deploymentId/rules/:ruleId" element={<MockRuleEditor />} />
               <Route path="devices" element={<MockDevicesList />} />

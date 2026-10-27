@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
 import { ExecutionBadge, JsonDialog, MockPage, Section, SourceBadge, SyncBadge, TypeBadge } from "./components"
-import { buildManifest, deviceStatus, fmt, useMockStore } from "./mockData"
+import { deviceStatus, fmt, manifestForVersion, useMockStore } from "./mockData"
 
 const cities = ["Berlin", "Munich", "Kempten"]
 
@@ -201,7 +201,7 @@ export default function MockDeviceDeployment() {
           onOpenChange={setShowSent}
           title={`Last manifest sent to ${deviceId}`}
           description="sent_manifest of the last execution (password masked)."
-          value={buildManifest(version.definition, dd?.desired_state === "ABSENT")}
+          value={manifestForVersion(version, dd?.desired_state === "ABSENT")}
         />
       )}
 
