@@ -133,6 +133,122 @@ const getDeployments = async () => {
   return data;
 }
 
+const getDeploymentDefinitions = async () => {
+  const { data } = await edgeConfigApiInstance.get('/deployment-management/definitions');
+  return data;
+}
+
+const createDeploymentDefinition = async (payload: {
+  name: string;
+  deployment_type: "IOTEDGE" | "COMPOSE";
+  description: string | null;
+}) => {
+  const { data } = await edgeConfigApiInstance.post('/deployment-management/definitions', payload);
+  return data;
+}
+
+const updateDeploymentDefinition = async (id: number, payload: {
+  name: string;
+  deployment_type: "IOTEDGE" | "COMPOSE";
+  description: string | null;
+}) => {
+  const { data } = await edgeConfigApiInstance.put(`/deployment-management/definitions/${id}`, payload);
+  return data;
+}
+
+const getDeploymentVersions = async (id: number) => {
+  const { data } = await edgeConfigApiInstance.get(`/deployment-management/definitions/${id}/versions`);
+  return data;
+}
+
+const createDeploymentVersion = async (id: number, payload: {
+  change_note: string;
+  definition: object;
+}) => {
+  const { data } = await edgeConfigApiInstance.post(`/deployment-management/definitions/${id}/versions`, payload);
+  return data;
+}
+
+const getTargetRules = async () => {
+  const { data } = await edgeConfigApiInstance.get('/deployment-management/target-rules');
+  return data;
+}
+
+const getTargetRuleValues = async () => {
+  const { data } = await edgeConfigApiInstance.get('/deployment-management/target-rule-values');
+  return data;
+}
+
+const createTargetRule = async (payload: {
+  name: string;
+  expression: { key: string; values: string[]; operator: "AND" | "OR" }[];
+  excluded_device_ids: string[];
+}) => {
+  const { data } = await edgeConfigApiInstance.post('/deployment-management/target-rules', payload);
+  return data;
+}
+
+const updateTargetRule = async (id: number, payload: {
+  name: string;
+  expression: { key: string; values: string[]; operator: "AND" | "OR" }[];
+  excluded_device_ids: string[];
+}) => {
+  const { data } = await edgeConfigApiInstance.put(`/deployment-management/target-rules/${id}`, payload);
+  return data;
+}
+
+const deleteTargetRule = async (id: number) => {
+  const { data } = await edgeConfigApiInstance.delete(`/deployment-management/target-rules/${id}`);
+  return data;
+}
+
+const previewDeploymentRun = async (payload: {
+  deployment_version_id: number;
+  rule_id: number;
+}) => {
+  const { data } = await edgeConfigApiInstance.post('/deployment-management/executions/preview', payload);
+  return data;
+}
+
+const createDeploymentRun = async (payload: {
+  deployment_version_id: number;
+  rule_version_id: number;
+  idempotency_key: string;
+}) => {
+  const { data } = await edgeConfigApiInstance.post('/deployment-management/executions', payload);
+  return data;
+}
+
+const getDeploymentRuns = async (limit = 100, offset = 0) => {
+  const { data } = await edgeConfigApiInstance.get('/deployment-management/executions', {
+    params: { limit, offset },
+  });
+  return data;
+}
+
+const getDeploymentRun = async (id: string) => {
+  const { data } = await edgeConfigApiInstance.get(`/deployment-management/executions/${id}`);
+  return data;
+}
+
+const retryDeploymentDispatch = async (runId: string, deviceId: string) => {
+  const { data } = await edgeConfigApiInstance.post(
+    `/deployment-management/executions/${runId}/devices/${encodeURIComponent(deviceId)}/retry`,
+  );
+  return data;
+}
+
+const getDeploymentHistory = async (params: {
+  limit?: number;
+  offset?: number;
+  status?: string;
+  deployment_id?: number;
+  search?: string;
+}) => {
+  const { data } = await edgeConfigApiInstance.get('/deployment-management/history', { params });
+  return data;
+}
+
 const getDeploymentStatus = async (deviceId: string | undefined) => {
   const { data } = await edgeConfigApiInstance.get(`/${deviceId}/deployment/status`);
   return data;
@@ -391,6 +507,22 @@ export const edgeConfigApi = {
   postTwinConfig,
   invokeDirectMethod,
   getDeployments,
+  getDeploymentDefinitions,
+  createDeploymentDefinition,
+  updateDeploymentDefinition,
+  getDeploymentVersions,
+  createDeploymentVersion,
+  getTargetRules,
+  getTargetRuleValues,
+  createTargetRule,
+  updateTargetRule,
+  deleteTargetRule,
+  previewDeploymentRun,
+  createDeploymentRun,
+  getDeploymentRuns,
+  getDeploymentRun,
+  retryDeploymentDispatch,
+  getDeploymentHistory,
   getDeploymentStatus,
   getConnectionStatus,
   nmShow,
