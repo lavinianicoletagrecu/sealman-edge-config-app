@@ -37,6 +37,11 @@ import Roles from "./features/authorization/Roles";
 import Scopes from "./features/authorization/Scopes";
 import Users from "./features/authorization/Users";
 import UserProfile from "./pages/UserProfile";
+import DeploymentDefinitions from "./pages/deployments/DeploymentDefinitions";
+import TargetRules from "./pages/deployments/TargetRules";
+import DeploymentExecutions from "./pages/deployments/DeploymentExecutions";
+import DeploymentHistory from "./pages/deployments/DeploymentHistory";
+import { DeploymentDetail, DeploymentVersionEditor, DeploymentVersionPreview } from "./pages/deployments/DeploymentVersionPages";
 
 function ExtensionPage() {
   const user = useOutletUser();
@@ -90,24 +95,14 @@ export default function App() {
             </Route>
             <Route path="deployments" element={<DeploymentsLayout />}>
               <Route index element={<Navigate to="management" replace />} />
-              <Route
-                path="management"
-                element={
-                  <ComingNextPage
-                    title="Deployment Management"
-                    description="Managing deployments across your whole fleet is the next feature on our roadmap and will arrive in an upcoming release."
-                  />
-                }
-              />
-              <Route
-                path="operations"
-                element={
-                  <ComingNextPage
-                    title="Deployment Operations"
-                    description="Running and tracking deployment operations across your fleet is coming soon and will arrive in an upcoming release."
-                  />
-                }
-              />
+              <Route path="management" element={<DeploymentDefinitions />} />
+              <Route path="management/:deploymentId" element={<DeploymentDetail />} />
+              <Route path="management/:deploymentId/versions/new" element={<DeploymentVersionEditor />} />
+              <Route path="management/:deploymentId/versions/:version" element={<DeploymentVersionPreview />} />
+              <Route path="target-rules" element={<TargetRules />} />
+              <Route path="executions" element={<DeploymentExecutions />} />
+              <Route path="history" element={<DeploymentHistory />} />
+              <Route path="operations" element={<Navigate to="/deployments/executions" replace />} />
             </Route>
             <Route path="fleet-configuration/*" element={<Navigate to="/deployments" replace />} />
             <Route
