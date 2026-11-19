@@ -13,12 +13,13 @@ import { edgeConfigApi } from "@/api/edgeConfig/edgeConfigApi";
 
 type Operator = "AND" | "OR";
 type Condition = { key: string; values: string[]; operator: Operator };
-type Device = { device_id: string; device_type: string; metadata: Record<string, unknown>; endpoints: Record<string, unknown>[]; services: string[] };
+type Device = { device_id: string; device_type: string; metadata: Record<string, unknown>; endpoints: Record<string, unknown>[]; services: string[]; maintenance_mode?: boolean };
 type Rule = {
   id: number;
   name: string;
   updated_at: string;
   matching_devices: number;
+  skipped_maintenance_devices?: number;
   version: { version: number; expression: Condition[]; excluded_device_ids: string[] };
   used_deployment?: string | null;
   deployment_count: number;
@@ -200,7 +201,15 @@ export default function TargetRules() {
                     <div className="font-semibold">{rule.name}</div>
                     <div className="mt-1 text-xs text-muted-foreground">{rule.version.expression.length || "All"} condition{rule.version.expression.length === 1 ? "" : "s"}</div>
                   </TableCell>
-                  <TableCell><span className="font-semibold">{rule.matching_devices}</span> <span className="text-muted-foreground">devices</span></TableCell>
+                  <TableCell>
+                    <span className="font-semibold">{rule.matching_devices}</span>{" "}
+                    <span className="text-muted-foreground">eligible</span>
+                    {!!rule.skipped_maintenance_devices && (
+                      <div className="mt-1 text-xs text-amber-800">
+                        {rule.skipped_maintenance_devices} skipped · maintenance mode
+                      </div>
+                    )}
+                  </TableCell>
                   <TableCell><span className="rounded bg-muted px-2 py-1 text-xs font-medium">v{rule.version.version}</span></TableCell>
                   <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{dateLabel(rule.updated_at)}</TableCell>
                   <TableCell className="text-right">
@@ -300,7 +309,7 @@ export default function TargetRules() {
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
                   <h3 className="font-medium">Matching devices <span className="text-muted-foreground">({matchingDevices.length})</span></h3>
-                  <p className="text-xs text-muted-foreground">Uncheck devices to exclude them from this rule.</p>
+                  <p className="text-xs text-muted-foreground">Maintenance-mode devices are skipped from new executions. Uncheck devices to exclude them from this rule.</p>
                 </div>
                 <div className="relative w-full sm:w-64">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -311,7 +320,7 @@ export default function TargetRules() {
                 {filteredDevices.length ? (
                   <Table>
                     <TableHeader className="sticky top-0 bg-background">
-                      <TableRow><TableHead className="w-12">Include</TableHead><TableHead>Device</TableHead><TableHead>Location</TableHead><TableHead>Type</TableHead><TableHead>Services</TableHead></TableRow>
+                      <TableRow><TableHead className="w-12">Include</TableHead><TableHead>Device</TableHead><TableHead>Location</TableHead><TableHead>Type</TableHead><TableHead>Services</TableHead><TableHead>Status</TableHead></TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredDevices.map((device) => {
@@ -327,6 +336,11 @@ export default function TargetRules() {
                             <TableCell className="text-sm">{location || "—"}</TableCell>
                             <TableCell className="text-sm">{type ? String(type) : "—"}</TableCell>
                             <TableCell className="text-sm">{device.services.join(", ") || "—"}</TableCell>
+                            <TableCell className="text-xs">
+                              {device.maintenance_mode
+                                ? <span className="font-medium text-amber-800">Skipped · maintenance mode</span>
+                                : <span className="text-emerald-700">Eligible</span>}
+                            </TableCell>
                           </TableRow>
                         );
                       })}

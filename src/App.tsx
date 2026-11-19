@@ -41,6 +41,7 @@ import DeploymentDefinitions from "./pages/deployments/DeploymentDefinitions";
 import TargetRules from "./pages/deployments/TargetRules";
 import DeploymentExecutions from "./pages/deployments/DeploymentExecutions";
 import DeploymentHistory from "./pages/deployments/DeploymentHistory";
+import MaintenanceModePage from "./pages/deployments/MaintenanceMode";
 import { DeploymentDetail, DeploymentVersionEditor, DeploymentVersionPreview } from "./pages/deployments/DeploymentVersionPages";
 
 function ExtensionPage() {
@@ -102,6 +103,7 @@ export default function App() {
               <Route path="target-rules" element={<TargetRules />} />
               <Route path="executions" element={<DeploymentExecutions />} />
               <Route path="history" element={<DeploymentHistory />} />
+              <Route path="maintenance-mode" element={<MaintenanceModePage />} />
               <Route path="operations" element={<Navigate to="/deployments/executions" replace />} />
             </Route>
             <Route path="fleet-configuration/*" element={<Navigate to="/deployments" replace />} />

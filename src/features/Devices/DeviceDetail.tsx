@@ -26,6 +26,7 @@ import useGetDeviceMetadata from "@/generated/edge-administration/hooks/device_m
 import RoutedExtensionPanel from "@/features/Extensions/outlets/RoutedExtensionPanel";
 import { useNavContributions } from "@/features/Extensions/outlets/useNavContributions";
 import { useOutletUser } from "@/features/Extensions/outlets/useOutletUser";
+import MaintenanceMode from "./ModuleConfig/MaintenanceMode";
 
 function Panel({ children }: { children: ReactNode }) {
   return <div className="rounded-lg border bg-white p-4">{children}</div>;
@@ -120,6 +121,7 @@ export default function DeviceDetail() {
                   title="Applications"
                   description="The deployment assigned to this device and the modules running on it."
                 >
+                  {deviceId && <MaintenanceMode deviceId={deviceId} canEdit={canEdit} />}
                   <DeploymentInfo />
                   <ModuleList />
                 </DevicePanel>

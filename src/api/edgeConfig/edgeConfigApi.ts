@@ -58,6 +58,24 @@ const getDevice = async (deviceId: string | undefined) => {
   return data;
 }
 
+const getDeviceMaintenanceMode = async (deviceId: string) => {
+  const { data } = await edgeConfigApiInstance.get(`/devices/${encodeURIComponent(deviceId)}/maintenance-mode`);
+  return data;
+}
+
+const setDeviceMaintenanceMode = async (deviceId: string, maintenance_mode: boolean) => {
+  const { data } = await edgeConfigApiInstance.patch(
+    `/devices/${encodeURIComponent(deviceId)}/maintenance-mode`,
+    { maintenance_mode },
+  );
+  return data;
+}
+
+const getDeviceMaintenanceModes = async () => {
+  const { data } = await edgeConfigApiInstance.get('/devices/maintenance-mode');
+  return data;
+}
+
 const getSmartEmsInfo = async (deviceId: string | undefined) => {
   const { data } = await edgeConfigApiInstance.get(`/${deviceId}/smartems/info`);
   return data;
@@ -158,6 +176,19 @@ const updateDeploymentDefinition = async (id: number, payload: {
 
 const getDeploymentVersions = async (id: number) => {
   const { data } = await edgeConfigApiInstance.get(`/deployment-management/definitions/${id}/versions`);
+  return data;
+}
+
+const getDeploymentRegistryRepositories = async () => {
+  const { data } = await edgeConfigApiInstance.get('/deployment-management/registry/repositories');
+  return data;
+}
+
+const getDeploymentRegistryTags = async (repository: string) => {
+  const path = repository.split("/").map(encodeURIComponent).join("/");
+  const { data } = await edgeConfigApiInstance.get(
+    `/deployment-management/registry/repositories/${path}/tags`,
+  );
   return data;
 }
 
@@ -494,6 +525,9 @@ const deleteDeviceTemplateVariable = async (name: string): Promise<void> => {
 export const edgeConfigApi = {
   getDevices,
   getDevice,
+  getDeviceMaintenanceMode,
+  setDeviceMaintenanceMode,
+  getDeviceMaintenanceModes,
   getSmartEmsInfo,
   putDeploymentTag,
   getSmartEmsStatus,
@@ -511,6 +545,8 @@ export const edgeConfigApi = {
   createDeploymentDefinition,
   updateDeploymentDefinition,
   getDeploymentVersions,
+  getDeploymentRegistryRepositories,
+  getDeploymentRegistryTags,
   createDeploymentVersion,
   getTargetRules,
   getTargetRuleValues,

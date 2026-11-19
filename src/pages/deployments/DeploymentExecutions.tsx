@@ -14,7 +14,7 @@ import { edgeConfigApi } from "@/api/edgeConfig/edgeConfigApi";
 type Deployment = { id: number; name: string; deployment_type: "IOTEDGE" | "COMPOSE"; version_count: number };
 type DeploymentVersion = { id: number; version: number; change_note: string; created_at: string };
 type Rule = { id: number; name: string; version: { id: number; version: number } };
-type PreviewDevice = { device_id: string; device_type: string; metadata: Record<string, unknown>; endpoints: Record<string, unknown>[]; services: string[] };
+type PreviewDevice = { device_id: string; device_type: string; metadata: Record<string, unknown>; endpoints: Record<string, unknown>[]; services: string[]; maintenance_mode?: boolean };
 type RunPreview = {
   deployment_id: number;
   deployment_name: string;
@@ -343,18 +343,28 @@ export default function DeploymentExecutions() {
               <section className="space-y-3 rounded-lg border p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div><h3 className="font-semibold">Review target devices</h3><p className="text-sm text-muted-foreground">{preview.deployment_name} v{preview.deployment_version} · {preview.rule_name} v{preview.rule_version}</p></div>
-                  <Badge variant="outline">{preview.matching_devices.length} devices</Badge>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="outline">{preview.matching_devices.filter((device) => !device.maintenance_mode).length} eligible</Badge>
+                    {!!preview.matching_devices.filter((device) => device.maintenance_mode).length && (
+                      <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-900">
+                        {preview.matching_devices.filter((device) => device.maintenance_mode).length} skipped · maintenance mode
+                      </Badge>
+                    )}
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground">Confirming queues durable IoT Hub twin updates for these devices. Devices remain pending until the Edge Agent reports the selected desired version.</p>
+                <p className="text-xs text-muted-foreground">Maintenance-mode devices are skipped and will not be included in this execution. Confirming queues durable IoT Hub twin updates for eligible devices; they remain pending until the Edge Agent reports the selected desired version.</p>
                 <div className="max-h-64 overflow-auto rounded-md border">
                   <Table>
-                    <TableHeader><TableRow><TableHead>Device</TableHead><TableHead>Customer / site</TableHead><TableHead>Device type</TableHead><TableHead>Services</TableHead></TableRow></TableHeader>
+                    <TableHeader><TableRow><TableHead>Device</TableHead><TableHead>Customer / site</TableHead><TableHead>Device type</TableHead><TableHead>Services</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
                     <TableBody>
-                      {preview.matching_devices.map((device) => <TableRow key={device.device_id}><TableCell className="font-mono text-xs">{device.device_id}</TableCell><TableCell>{String(device.metadata.customer ?? device.metadata.site ?? device.metadata.name ?? "—")}</TableCell><TableCell>{device.device_type}</TableCell><TableCell>{device.services.join(", ") || "—"}</TableCell></TableRow>)}
-                      {!preview.matching_devices.length && <TableRow><TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">No visible devices match this rule. Choose a rule with matching devices to continue.</TableCell></TableRow>}
+                      {preview.matching_devices.map((device) => <TableRow key={device.device_id} className={device.maintenance_mode ? "bg-amber-50/60" : undefined}><TableCell className="font-mono text-xs">{device.device_id}</TableCell><TableCell>{String(device.metadata.customer ?? device.metadata.site ?? device.metadata.name ?? "—")}</TableCell><TableCell>{device.device_type}</TableCell><TableCell>{device.services.join(", ") || "—"}</TableCell><TableCell className="text-xs">{device.maintenance_mode ? <span className="font-medium text-amber-800">Skipped · maintenance mode</span> : <span className="text-emerald-700">Eligible</span>}</TableCell></TableRow>)}
+                      {!preview.matching_devices.length && <TableRow><TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">No visible devices match this rule. Choose a rule with matching devices to continue.</TableCell></TableRow>}
                     </TableBody>
                   </Table>
                 </div>
+                {preview.matching_devices.length > 0 && !preview.matching_devices.some((device) => !device.maintenance_mode) && (
+                  <p className="text-sm font-medium text-amber-800">All matching devices are in maintenance mode. Turn maintenance mode off for at least one device before creating an execution.</p>
+                )}
               </section>
             )}
             {createMutation.isError && <p className="text-sm text-destructive">Could not record the rollout. Your preview is preserved; retry or cancel.</p>}
@@ -366,7 +376,7 @@ export default function DeploymentExecutions() {
             ) : (
               <>
                 <Button variant="outline" onClick={() => { resetPreview(); }}>Change selection</Button>
-                <Button disabled={!preview.matching_devices.length || createMutation.isPending} onClick={() => createMutation.mutate()}>
+                <Button disabled={!preview.matching_devices.some((device) => !device.maintenance_mode) || createMutation.isPending} onClick={() => createMutation.mutate()}>
                   {createMutation.isPending ? "Recording rollout..." : "Confirm rollout"}
                 </Button>
               </>
