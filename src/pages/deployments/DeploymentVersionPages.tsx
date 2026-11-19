@@ -2,10 +2,11 @@ import { useCallback, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Eye, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, Eye, PackageSearch, Plus, Save, Trash2 } from "lucide-react";
 import { toast } from "react-toastify";
 import PageTitle from "@/components/Typography/PageTitle";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -66,6 +67,8 @@ type DeploymentVersion = {
   created_by: string | null;
   definition: EdgeDefinition | ComposeDefinition;
 };
+type RegistryRepositoryList = { registry: string; repositories: string[] };
+type RegistryTagList = { repository: string; tags: string[] };
 
 const emptyRuntimeComponent = (image: string): RuntimeComponent => ({ image, env: {}, create_options: {} });
 const emptyEdgeDefinition = (): EdgeDefinition => ({
@@ -195,6 +198,30 @@ function ModuleEditor({
   const imageName = image?.[1] ?? module.image;
   const imageVersion = image?.[2] ?? "";
   const [open, setOpen] = useState(true);
+  const [registryOpen, setRegistryOpen] = useState(false);
+  const [registrySearch, setRegistrySearch] = useState("");
+  const [tagSearch, setTagSearch] = useState("");
+  const [selectedRepository, setSelectedRepository] = useState("");
+  const repositoriesQuery = useQuery({
+    queryKey: ["deployment-registry-repositories"],
+    queryFn: edgeConfigApi.getDeploymentRegistryRepositories,
+    enabled: registryOpen,
+    staleTime: 60_000,
+  });
+  const tagsQuery = useQuery({
+    queryKey: ["deployment-registry-tags", selectedRepository],
+    queryFn: () => edgeConfigApi.getDeploymentRegistryTags(selectedRepository),
+    enabled: registryOpen && Boolean(selectedRepository),
+    staleTime: 60_000,
+  });
+  const registry = repositoriesQuery.data as RegistryRepositoryList | undefined;
+  const repositoryTags = tagsQuery.data as RegistryTagList | undefined;
+  const visibleRepositories = (registry?.repositories ?? []).filter((repository) =>
+    repository.toLowerCase().includes(registrySearch.trim().toLowerCase()),
+  );
+  const visibleTags = (repositoryTags?.tags ?? []).filter((tag) =>
+    tag.toLowerCase().includes(tagSearch.trim().toLowerCase()),
+  );
   return (
     <div className="rounded-lg border">
       <div className="flex items-center gap-2 bg-muted/40 px-3 py-2">
@@ -204,16 +231,127 @@ function ModuleEditor({
       </div>
       {open && <div className="grid gap-4 p-4 md:grid-cols-2">
         <div className="space-y-1"><Label>Name</Label><Input value={module.name} onChange={(event) => set("name", event.target.value)} placeholder="telegraf" /></div>
-        <div className="space-y-1"><Label>Image name</Label><Input value={imageName} onChange={(event) => set("image", `${event.target.value}${imageVersion ? `:${imageVersion}` : ""}`)} placeholder="registry.example.com/telegraf" /></div>
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-2">
+            <Label>Image name</Label>
+            <Button type="button" size="sm" variant="outline" onClick={() => {
+              setRegistryOpen(true);
+              setRegistrySearch("");
+              setTagSearch("");
+              setSelectedRepository("");
+            }}>
+              <PackageSearch className="mr-2 h-4 w-4" />Browse Azure CR
+            </Button>
+          </div>
+          <Input value={imageName} onChange={(event) => set("image", `${event.target.value}${imageVersion ? `:${imageVersion}` : ""}`)} placeholder="registry.example.com/telegraf" />
+          <p className="text-xs text-muted-foreground">You can also enter Microsoft or another public/private image directly. Images in the configured private registry use API-side credentials; don't enter credentials here.</p>
+        </div>
         <div className="space-y-1"><Label>Version</Label><Input value={imageVersion} onChange={(event) => set("image", `${imageName}${event.target.value ? `:${event.target.value}` : ""}`)} placeholder="1.3.0" /></div>
         <div className="space-y-1"><Label>Restart policy</Label><select className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={module.restart_policy} onChange={(event) => set("restart_policy", event.target.value as Module["restart_policy"])}>{["always", "on-failure", "on-unhealthy", "never"].map((item) => <option key={item}>{item}</option>)}</select></div>
         <div className="space-y-1"><Label>Status</Label><select className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={module.status} onChange={(event) => set("status", event.target.value as Module["status"])}><option value="running">running</option><option value="stopped">stopped</option></select></div>
         <div className="space-y-1"><Label>Image pull policy</Label><select className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={module.image_pull_policy} onChange={(event) => set("image_pull_policy", event.target.value as Module["image_pull_policy"])}><option value="on-create">on-create</option><option value="never">never</option></select></div>
         <div className="space-y-1"><Label>Startup order</Label><Input type="number" min={0} value={module.startup_order ?? ""} onChange={(event) => set("startup_order", event.target.value === "" ? null : Number(event.target.value))} /></div>
         <div className="space-y-2 md:col-span-2"><Label className="text-xs">Environment</Label><KeyValueEditor value={module.env} onChange={(value) => set("env", value)} keyLabel="Variable name" valueLabel="Value" /></div>
-        <JsonEditor id={`module-${index}-create`} label="Create options (Docker JSON)" value={module.create_options} onChange={(value) => set("create_options", value)} onValidityChange={onValidityChange} />
+        <div className="space-y-1">
+          <JsonEditor id={`module-${index}-create`} label="Create options (Docker JSON)" value={module.create_options} onChange={(value) => set("create_options", value)} onValidityChange={onValidityChange} />
+          <p className="text-xs text-muted-foreground">Enter a JSON object. The API stringifies it for the Edge Agent; string values are preserved, including long environment values.</p>
+        </div>
         <JsonEditor id={`module-${index}-desired`} label="Desired properties (module twin JSON)" value={module.desired_properties} onChange={(value) => set("desired_properties", value)} onValidityChange={onValidityChange} />
       </div>}
+      <Dialog
+        open={registryOpen}
+        onOpenChange={(isOpen) => {
+          setRegistryOpen(isOpen);
+          if (!isOpen) {
+            setSelectedRepository("");
+            setTagSearch("");
+          }
+        }}
+      >
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Browse Azure Container Registry</DialogTitle>
+            <DialogDescription>Select a repository and tag. You can still use any image by entering it manually.</DialogDescription>
+          </DialogHeader>
+          {repositoriesQuery.isLoading ? (
+            <LoadingState label="Loading registry repositories..." />
+          ) : repositoriesQuery.isError ? (
+            <ErrorState
+              title="Could not load registry repositories"
+              message="Check the API registry configuration and catalog permissions, then try again."
+              onRetry={() => { void repositoriesQuery.refetch(); }}
+            />
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Input
+                  value={registrySearch}
+                  onChange={(event) => setRegistrySearch(event.target.value)}
+                  placeholder="Filter repositories"
+                  aria-label="Filter registry repositories"
+                />
+                <div className="max-h-80 space-y-1 overflow-y-auto rounded-md border p-1">
+                  {visibleRepositories.map((repository) => (
+                    <button
+                      type="button"
+                      key={repository}
+                      className={`w-full rounded px-2 py-2 text-left text-sm hover:bg-muted ${selectedRepository === repository ? "bg-muted font-medium" : ""}`}
+                      onClick={() => {
+                        setSelectedRepository(repository);
+                        setTagSearch("");
+                      }}
+                    >
+                      {repository}
+                    </button>
+                  ))}
+                  {!visibleRepositories.length && <p className="p-3 text-sm text-muted-foreground">No repositories found.</p>}
+                </div>
+              </div>
+              <div className="space-y-2 rounded-md border p-2">
+                {!selectedRepository ? (
+                  <p className="p-3 text-sm text-muted-foreground">Select a repository to view its tags.</p>
+                ) : tagsQuery.isLoading ? (
+                  <LoadingState label="Loading image tags..." />
+                ) : tagsQuery.isError ? (
+                  <ErrorState
+                    title="Could not load image tags"
+                    message="Check the repository permissions, then select it again."
+                    onRetry={() => { void tagsQuery.refetch(); }}
+                  />
+                ) : (
+                  <>
+                    <p className="truncate px-2 text-xs text-muted-foreground">{selectedRepository}</p>
+                    <Input
+                      value={tagSearch}
+                      onChange={(event) => setTagSearch(event.target.value)}
+                      placeholder="Filter tags"
+                      aria-label="Filter image tags"
+                    />
+                    <div className="max-h-72 space-y-1 overflow-y-auto">
+                    {visibleTags.map((tag) => (
+                      <Button
+                        type="button"
+                        key={tag}
+                        variant="ghost"
+                        className="w-full justify-start font-mono text-xs"
+                        onClick={() => {
+                          set("image", `${registry?.registry}/${selectedRepository}:${tag}`);
+                          setRegistryOpen(false);
+                          setSelectedRepository("");
+                        }}
+                      >
+                        {tag}
+                      </Button>
+                    ))}
+                    {!visibleTags.length && <p className="p-3 text-sm text-muted-foreground">{repositoryTags?.tags.length ? "No tags match that filter." : "No tags found."}</p>}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
